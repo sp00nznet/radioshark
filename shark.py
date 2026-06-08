@@ -44,8 +44,22 @@ def default_device():
     """Name/handle of the radioSHARK audio capture device for this OS."""
     if IS_WIN:
         return "Analog Connector (RadioSHARK)"     # DirectShow friendly name
-    # Linux: ALSA device. Override with RADIOSHARK_ALSA, else a sensible guess.
-    return os.environ.get("RADIOSHARK_ALSA", "plughw:CARD=radioSHARK")
+    return _linux_alsa_device()
+
+def _linux_alsa_device():
+    """Find the radioSHARK's ALSA capture card. Override with $RADIOSHARK_ALSA."""
+    env = os.environ.get("RADIOSHARK_ALSA")
+    if env:
+        return env
+    try:                                           # parse /proc/asound/cards
+        with open("/proc/asound/cards") as f:
+            for line in f:                         # e.g. " 1 [radioSHARK     ]: USB-Audio..."
+                m = re.match(r"\s*\d+\s+\[(\w+)", line)
+                if m and "shark" in line.lower():
+                    return f"plughw:CARD={m.group(1)}"
+    except OSError:
+        pass
+    return "plughw:CARD=radioSHARK"
 
 def audio_input(device=None):
     """ffmpeg/ffplay input args to capture from the radioSHARK, per platform."""
@@ -67,7 +81,17 @@ EQ_PROFILES = {
 
 # ---------------------------------------------------------------- HID layer
 def _open():
-    d = hid.device(); d.open(VID, PID); return d
+    d = hid.device()
+    try:
+        d.open(VID, PID)
+    except Exception as e:
+        if not IS_WIN:
+            raise RuntimeError(
+                "can't open the radioSHARK HID interface. On Linux the kernel "
+                "radio-shark driver claims it — run scripts/setup-linux.sh once "
+                "to free it and grant hidraw access, then replug the device.") from e
+        raise
+    return d
 
 def _write(d, *payload):
     buf = bytes([0x00, *payload]); d.write(buf + bytes(7 - len(buf)))

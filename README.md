@@ -9,7 +9,7 @@ that won't run on anything modern. This project revives the hardware on **Window
 live listening, recording, scheduled recording, timeshift, network streaming,
 24/7 logging, a station scanner, **song identification**, and **live transcription**.
 
-It's a fairly bespoke piece of hardware, but they still turn up on eBay for around
+It's an obscure little gadget now, but they still turn up on eBay for around
 **$20** — genuinely worth it if you're into this kind of thing. For the period
 flavor, here's the [2005 Ars Technica review](https://arstechnica.com/gadgets/2005/01/radioshark/)
 that this project set out to match (and then some).
@@ -51,8 +51,9 @@ Two front-ends share one engine, so they're always feature-identical:
 # 1. install deps (ffmpeg must also be on PATH: winget install Gyan.FFmpeg)
 pip install -r requirements.txt
 
-# 2. Windows only — enable the shark's audio device (see below)
-powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+# 2. enable the shark + free its HID interface (see notes below)
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1   # Windows
+./scripts/setup-linux.sh                                             # Linux
 
 # 3. cache the transcription model (one-time, optional)
 python shark.py prepare
@@ -75,6 +76,15 @@ It finds the endpoint by its hardware ID, enables it, and restarts the audio
 service (it'll prompt for admin). Prefer to do it by hand? Open `mmsys.cpl` →
 **Recording** → right-click → show disabled/disconnected devices → enable
 **Analog Connector (RadioSHARK)**.
+
+### 🐧 Linux: free the HID interface (one-time)
+
+Audio works out of the box (ALSA, auto-detected). Tuning needs the kernel
+`radio-shark` driver to let go of the HID interface so this app can drive it from
+userspace — `scripts/setup-linux.sh` blacklists that driver, adds a udev rule for
+non-root access, and finds the ALSA card. Unplug/replug afterward. See
+[docs/HARDWARE.md](docs/HARDWARE.md#running-on-linux) for the details and the
+V4L2 alternative.
 
 ### Requirements
 
@@ -122,3 +132,7 @@ single-capture fan-out engine, and how it ports to Linux? See
 
 HID/tuning protocol derived from the Linux kernel `radio-shark.c` / `tea575x.c`
 by Hans de Goede. Built with ffmpeg, hidapi, shazamio, and faster-whisper.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -67,11 +67,32 @@ The CLI and GUI both build their processes from the same command builders
 (`engine_cmds`, `listen_cmd`, `record_cmd`, `stream_cmd`, `log_cmd`,
 `timeshift_recorder_cmd`), so the two front-ends stay feature-identical.
 
-To run on Linux: the mainline kernel already includes the `radio-shark` driver
-(V4L2 tuning + a standard ALSA USB-audio capture). Set `RADIOSHARK_ALSA` to the
-shark's ALSA capture device (e.g. `plughw:CARD=radioSHARK`), install ffmpeg, and
-use the same commands. Tuning may use `hidapi` directly or `v4l2-ctl --set-freq`
-depending on whether the kernel module has claimed the HID interface.
+### Running on Linux
+
+The audio side needs nothing special — the radioSHARK's USB-Audio interface is
+handled by `snd-usb-audio` and appears as an ALSA capture card, which the app
+auto-detects from `/proc/asound/cards` (override with `$RADIOSHARK_ALSA`).
+
+Tuning + LEDs are the only wrinkle. The mainline kernel ships a `radio-shark`
+driver that claims the HID interface and exposes a V4L2 tuner + sysfs LEDs. There
+are two ways to drive the radio:
+
+1. **hidapi (what this app uses)** — drive the HID interface from userspace,
+   exactly like the Windows build, so there's a single tuning codebase. This
+   requires the kernel `radio-shark` driver *not* to hold the interface.
+   **`scripts/setup-linux.sh`** handles it: it blacklists `radio-shark` (so
+   `usbhid` exposes the interface as `hidraw`) and installs a udev rule granting
+   non-root access. After running it, unplug/replug and everything works with the
+   same commands as Windows.
+2. **The kernel driver** — if you'd rather keep `radio-shark` loaded, you can tune
+   with `v4l2-ctl --device /dev/radioN --set-freq=<MHz>` and toggle LEDs via
+   `/sys/class/leds/shark::*`. This app doesn't use that path, but the hardware
+   supports it.
+
+Scheduling on Linux uses `cron` (the app writes/removes tagged crontab lines).
+Note that cron jobs run without a desktop session, so **wake-to-radio alarms**
+(which need audio output) are better set up as a user `systemd` timer or run from
+within your session.
 
 ## The 4 modes, one codebase
 
