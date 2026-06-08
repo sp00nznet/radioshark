@@ -1,0 +1,22 @@
+{
+  "wnpr": {
+    "freq": 88.5,
+    "am": false,
+    "label": "first station that worked"
+  },
+  "strong1": {
+    "freq": 96.3,
+    "am": false,
+    "label": "strongest signal"
+  },
+  "strong2": {
+    "freq": 104.5,
+    "am": false,
+    "label": "2nd strongest"
+  },
+  "news": {
+    "freq": 1010.0,
+    "am": true,
+    "label": "AM news example"
+  }
+}

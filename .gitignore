@@ -1,0 +1,18 @@
+# runtime temp / scratch
+_seg/
+_viz.raw
+_songclip.wav
+_clip.wav
+timeshift/
+logs/
+
+# recordings
+radioSHARK-*.mp3
+radioSHARK-*.wav
+radioSHARK-*.aac
+station_*.mp3
+station_*.wav
+
+# python
+__pycache__/
+*.pyc

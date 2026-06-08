@@ -1,0 +1,13 @@
+# Tuning + LEDs (required)
+hidapi
+
+# Song identification
+shazamio
+audioop-lts ; python_version >= "3.13"   # pydub/shazamio need stdlib audioop, removed in 3.13
+
+# Live transcription (downloads a model on first use; run: python shark.py prepare)
+faster-whisper
+
+# Note: ffmpeg/ffplay must be installed separately and on PATH
+#   Windows:  winget install Gyan.FFmpeg
+#   Linux:    apt install ffmpeg   (or your distro's package)
