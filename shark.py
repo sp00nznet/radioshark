@@ -28,6 +28,9 @@ try:                       # Windows consoles default to cp1252; emit UTF-8 so
 except Exception:
     pass
 
+import warnings            # hush requests' benign urllib3/chardet version notice
+warnings.filterwarnings("ignore", module="requests")
+
 VID, PID = 0x077d, 0x627a
 FMIF, AMIF = 10700, 450               # intermediate freqs (kHz)
 BAND_MW = (1 << 20)                   # TEA575X_BIT_BAND_MW (AM)
@@ -416,6 +419,90 @@ def prepare(model="base"):
     except ImportError:
         print("faster-whisper not installed:  python -m pip install faster-whisper")
 
+def doctor():
+    """Diagnose the setup: deps, ffmpeg, the HID interface, and the audio device."""
+    import shutil
+    fails = [0]
+    marks = {"ok": " OK ", "warn": "WARN", "fail": "FAIL"}
+    def L(status, label, hint=""):
+        print(f"  [{marks[status]}]  {label}")
+        if hint:
+            print(f"           -> {hint}")
+        if status == "fail":
+            fails[0] += 1
+
+    print("\nradioSHARK doctor")
+    print(f"  platform        : {'Windows' if IS_WIN else sys.platform}")
+    print(f"  capture device  : {default_device()}\n")
+
+    # external tools
+    for tool in ("ffmpeg", "ffplay"):
+        if shutil.which(tool):
+            L("ok", f"{tool} on PATH")
+        else:
+            L("fail", f"{tool} not found",
+              "install ffmpeg (Windows: winget install Gyan.FFmpeg; Linux: apt install ffmpeg)")
+
+    # python packages
+    def imp(mod, label, required, hint):
+        try:
+            __import__(mod); L("ok", label)
+        except Exception:
+            L("fail" if required else "warn", f"{label} not installed", hint)
+    imp("hid", "hidapi (tuning + LEDs)", True, "pip install hidapi")
+    imp("numpy", "numpy (visualizer)", False, "pip install numpy")
+    imp("shazamio", "shazamio (song ID)", False,
+        "pip install shazamio" + (" audioop-lts" if sys.version_info >= (3, 13) else ""))
+    imp("faster_whisper", "faster-whisper (transcription)", False, "pip install faster-whisper")
+
+    # the HID interface (tuning)
+    try:
+        import hid
+        if hid.enumerate(VID, PID):
+            try:
+                _open().close(); L("ok", "radioSHARK HID reachable (tuning works)")
+            except Exception as e:
+                L("fail", "radioSHARK HID present but can't be opened",
+                  "run scripts/setup-linux.sh then replug" if not IS_WIN else str(e))
+        else:
+            L("fail", "radioSHARK not found on USB (077d:627a)", "plug the device in")
+    except Exception as e:
+        L("warn", f"HID check skipped ({e})")
+
+    # the audio capture endpoint
+    if IS_WIN:
+        try:
+            out = subprocess.run(["ffmpeg", "-hide_banner", "-list_devices", "true",
+                                  "-f", "dshow", "-i", "dummy"], capture_output=True, text=True).stderr
+            if "RadioSHARK" in out or "Analog Connector" in out:
+                L("ok", "audio capture device enabled")
+            else:
+                L("fail", "radioSHARK audio device not enabled / not visible",
+                  "run: powershell -ExecutionPolicy Bypass -File scripts\\setup-windows.ps1")
+        except Exception as e:
+            L("warn", f"audio device check skipped ({e})")
+    else:
+        try:
+            with open("/proc/asound/cards") as f:
+                cards = f.read()
+            if "shark" in cards.lower():
+                L("ok", f"ALSA capture card found ({default_device()})")
+            else:
+                L("fail", "radioSHARK ALSA card not found",
+                  "plug it in; check 'arecord -l'; or set $RADIOSHARK_ALSA")
+        except OSError:
+            L("warn", "could not read /proc/asound/cards")
+
+    # whisper model cache (informational)
+    cache = os.path.expanduser("~/.cache/huggingface/hub")
+    if any("faster-whisper" in d for d in (os.listdir(cache) if os.path.isdir(cache) else [])):
+        L("ok", "transcription model cached")
+    else:
+        L("warn", "transcription model not cached yet", "run: python shark.py prepare")
+
+    print("\n" + ("All checks passed - you're ready to go.\n" if not fails[0]
+                  else f"{fails[0]} check(s) failed - see the hints above.\n"))
+
 # ------------------------------------------------------------- scheduling
 # Portable: Windows Task Scheduler (schtasks) / Linux cron. A job is a shark.py
 # subcommand string; both back-ends just register that command at a time.
@@ -487,6 +574,7 @@ def main():
     s = sub.add_parser("scan"); s.add_argument("--am", action="store_true"); s.add_argument("--debug", action="store_true")
     sk = sub.add_parser("seek"); sk.add_argument("--down", action="store_true"); sk.add_argument("--am", action="store_true"); sk.add_argument("--from", dest="frm", type=float)
     sub.add_parser("prepare")
+    sub.add_parser("doctor")
     sub.add_parser("presets")
     pa = sub.add_parser("preset"); pa.add_argument("action", choices=["add", "remove"]); pa.add_argument("name"); pa.add_argument("freq", nargs="?", type=float); pa.add_argument("--am", action="store_true"); pa.add_argument("--label", default="")
     le = sub.add_parser("led"); le.add_argument("--red", choices=["on", "off"]); le.add_argument("--blue", type=int); le.add_argument("--pulse", type=int)
@@ -553,6 +641,8 @@ def main():
         print(f"\r{' ' * 30}\r" + (f"found station at {found}" if found else "no station found"))
     elif a.cmd == "prepare":
         prepare()
+    elif a.cmd == "doctor":
+        doctor()
     elif a.cmd == "presets":
         pr = load_presets()
         if not pr: print("no presets yet. add one: shark.py preset add <name> <freq>")

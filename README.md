@@ -82,7 +82,8 @@ service (it'll prompt for admin). Prefer to do it by hand? Open `mmsys.cpl` →
 Audio works out of the box (ALSA, auto-detected). Tuning needs the kernel
 `radio-shark` driver to let go of the HID interface so this app can drive it from
 userspace — `scripts/setup-linux.sh` blacklists that driver, adds a udev rule for
-non-root access, and finds the ALSA card. Unplug/replug afterward. See
+non-root access, and finds the ALSA card. Unplug/replug afterward, then run
+`python shark.py doctor` to confirm everything's wired up. See
 [docs/HARDWARE.md](docs/HARDWARE.md#running-on-linux) for the details and the
 V4L2 alternative.
 
@@ -109,6 +110,7 @@ python shark.py log [--freq F] [--segment SECS] [--format mp3|aac|wav] [--dir D]
 python shark.py songid [--seconds N]
 python shark.py transcribe [--live] [--seconds N] [--model base] [--file F]
 python shark.py prepare                cache the Whisper model
+python shark.py doctor                  check deps, ffmpeg, HID + audio device
 python shark.py preset add <name> <freq> [--am] [--label "..."]   |   presets
 python shark.py schedule add <name> (--freq F | --preset P) --at HH:MM [--dur S] [--repeat ...]
 python shark.py schedule list | remove <name>      (also: alarm add|list|remove)
