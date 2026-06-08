@@ -50,8 +50,8 @@ def default_device():
 def audio_input(device=None):
     """ffmpeg/ffplay input args to capture from the radioSHARK, per platform."""
     device = device or default_device()
-    if IS_WIN:
-        return ["-f", "dshow", "-i", f"audio={device}"]
+    if IS_WIN:                                     # small buffer => lower capture latency
+        return ["-f", "dshow", "-audio_buffer_size", "80", "-i", f"audio={device}"]
     return ["-f", "alsa", "-i", device]            # Linux: ALSA capture
 
 DEFAULT_DEVICE = default_device()
@@ -363,9 +363,10 @@ def engine_cmds(eq=None, vizfile=None, segdir=None, device=None, record_file=Non
     The caller pipes ffmpeg.stdout into ffplay.stdin so a single device read feeds
     playback, visualizer, transcription and recording at once."""
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error"] + audio_input(device)
-    cmd += ["-map", "0:a"] + _eq_args(eq) + ["-c:a", "pcm_s16le", "-f", "wav", "pipe:1"]
-    if vizfile:                       # small, per-packet-flushed chunks => snappy meter
-        cmd += ["-map", "0:a", "-af", "aresample=8000,asetnsamples=n=400:p=0", "-ac", "1",
+    cmd += (["-map", "0:a"] + _eq_args(eq) +
+            ["-c:a", "pcm_s16le", "-flush_packets", "1", "-f", "wav", "pipe:1"])
+    if vizfile:                       # tiny, per-packet-flushed chunks => snappy meter
+        cmd += ["-map", "0:a", "-af", "aresample=8000,asetnsamples=n=160:p=0", "-ac", "1",
                 "-flush_packets", "1", "-f", "s16le", "-y", vizfile]
     if segdir:
         cmd += ["-map", "0:a", "-ar", "16000", "-ac", "1", "-f", "segment",
@@ -376,8 +377,9 @@ def engine_cmds(eq=None, vizfile=None, segdir=None, device=None, record_file=Non
         rc = {"wav": ["-c:a", "pcm_s16le"], "aac": ["-c:a", "aac", "-b:a", "192k"]
               }.get(ext, ["-c:a", "libmp3lame", "-b:a", "192k"])
         cmd += ["-map", "0:a"] + rc + ["-y", record_file]
-    ffplay = ["ffplay", "-hide_banner", "-loglevel", "error", "-nodisp",
-              "-autoexit", "-fflags", "nobuffer", "-i", "pipe:0"]
+    ffplay = ["ffplay", "-hide_banner", "-loglevel", "error", "-nodisp", "-autoexit",
+              "-fflags", "nobuffer", "-flags", "low_delay", "-probesize", "4096",
+              "-analyzeduration", "0", "-i", "pipe:0"]
     return cmd, ffplay
 
 def prepare(model="base"):

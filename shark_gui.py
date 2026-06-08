@@ -10,7 +10,7 @@ Run:  python shark_gui.py      (or:  python shark.py gui)
 """
 import os, sys, glob, time, threading, subprocess, re
 import tkinter as tk
-from tkinter import ttk, simpledialog, messagebox
+from tkinter import ttk, simpledialog, messagebox, colorchooser
 import shark
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if shark.IS_WIN else 0
@@ -50,6 +50,10 @@ class SharkGUI:
         self.eq_on = tk.BooleanVar(value=False)
         self.eq = tk.StringVar(value="flat")
         self.eq_b, self.eq_m, self.eq_t = tk.IntVar(value=0), tk.IntVar(value=0), tk.IntVar(value=0)
+        # transcript appearance
+        self.tx_font = tk.StringVar(value="Segoe UI")
+        self.tx_size = tk.IntVar(value=17)
+        self.tx_fg, self.tx_bg = "#e8e8ea", "#101014"
 
         nb = ttk.Notebook(root); nb.pack(fill="both", expand=True, padx=6, pady=6)
         self._tab_radio(nb)
@@ -151,6 +155,20 @@ class SharkGUI:
         ttk.Button(led, text="Off", command=lambda: shark.set_led(red=False, blue=0)).pack(side="left")
         ttk.Scale(led, from_=0, to=127, command=lambda v: shark.set_led(blue=int(float(v)))
                   ).pack(side="left", fill="x", expand=True, padx=8)
+
+        # Transcript appearance
+        tf = ttk.LabelFrame(f, text="Transcript appearance", padding=8); tf.pack(fill="x", pady=8)
+        fams = ["Segoe UI", "Consolas", "Arial", "Calibri", "Georgia", "Times New Roman",
+                "Verdana", "Comic Sans MS", "Courier New", "Trebuchet MS"]
+        ttk.Label(tf, text="font").grid(row=0, column=0)
+        fc = ttk.Combobox(tf, textvariable=self.tx_font, values=fams, width=15, state="readonly")
+        fc.grid(row=0, column=1, padx=4); fc.bind("<<ComboboxSelected>>", lambda e: self.apply_tx_style())
+        ttk.Label(tf, text="size").grid(row=0, column=2)
+        ttk.Spinbox(tf, from_=10, to=48, textvariable=self.tx_size, width=4,
+                    command=self.apply_tx_style).grid(row=0, column=3, padx=4)
+        ttk.Button(tf, text="Text color", command=lambda: self.pick_color("fg")).grid(row=0, column=4, padx=4)
+        ttk.Button(tf, text="Background", command=lambda: self.pick_color("bg")).grid(row=0, column=5, padx=4)
+        self.tx_preview = tk.Label(tf, text=" Aa ", fg=self.tx_fg, bg=self.tx_bg); self.tx_preview.grid(row=0, column=6, padx=6)
 
         # Capture
         cap = ttk.LabelFrame(f, text="Record / Stream / Log", padding=8); cap.pack(fill="x")
@@ -354,16 +372,31 @@ class SharkGUI:
                     self.viz.create_rectangle(x + 1, H - h, x + bw - 1, H, fill="#27d0a8", outline="")
         except Exception:
             pass
-        self.root.after(33, self._viz_tick)
+        self.root.after(18, self._viz_tick)       # ~55 fps
 
     # ------------------------------------------------------- transcription
+    def pick_color(self, which):
+        c = colorchooser.askcolor(color=(self.tx_fg if which == "fg" else self.tx_bg))[1]
+        if c:
+            if which == "fg": self.tx_fg = c
+            else: self.tx_bg = c
+            self.apply_tx_style()
+
+    def apply_tx_style(self):
+        try:
+            self.tx_preview.config(fg=self.tx_fg, bg=self.tx_bg, font=(self.tx_font.get(), 11))
+        except Exception:
+            pass
+        if self.karaoke and self.karaoke.winfo_exists():
+            self.k_text.config(font=(self.tx_font.get(), self.tx_size.get()), fg=self.tx_fg, bg=self.tx_bg)
+
     def open_karaoke(self):
         if self.karaoke and self.karaoke.winfo_exists():
             self.karaoke.lift(); return
         self.karaoke = tk.Toplevel(self.root)
         self.karaoke.title("radioSHARK — Transcript"); self.karaoke.geometry("540x320")
-        self.k_text = tk.Text(self.karaoke, wrap="word", font=("Segoe UI", 17),
-                              bg="#101014", fg="#e8e8ea", padx=14, pady=14, spacing3=4)
+        self.k_text = tk.Text(self.karaoke, wrap="word", font=(self.tx_font.get(), self.tx_size.get()),
+                              bg=self.tx_bg, fg=self.tx_fg, padx=14, pady=14, spacing3=4)
         self.k_text.pack(fill="both", expand=True)
         self.karaoke.protocol("WM_DELETE_WINDOW", self.close_karaoke)
 
