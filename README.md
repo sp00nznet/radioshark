@@ -1,120 +1,86 @@
-# radioSHARK
+# 🦈 radioSHARK
 
-Modern software for the **Griffin radioSHARK** (USB `077d:627a`) — the shark-fin
-USB AM/FM radio from 2004. The original Griffin app is long-dead XP/PPC-era
-software; this project revives the hardware on **Windows 11** (and is built to
-port to **Linux**), then goes well past what the original could do: live listen,
-recording, scheduled recording, timeshift, network streaming, 24/7 logging,
-a station scanner, **song identification**, and **live transcription**.
+**Bring the 2004 Griffin radioSHARK back to life — and give it superpowers it never had.**
 
-It ships in two front-ends that share one engine:
+The radioSHARK is a shark-fin-shaped USB AM/FM radio from 2004. It was a neat
+idea — "TiVo for radio" — but its software is long-dead XP/PowerPC-era abandonware
+that won't run on anything modern. This project revives the hardware on **Windows 11**
+(and is built to port to **Linux**), then blows past what the original could do:
+live listening, recording, scheduled recording, timeshift, network streaming,
+24/7 logging, a station scanner, **song identification**, and **live transcription**.
 
-* a **CLI** (`shark.py`) — works in a Windows terminal and a Linux terminal
+It's a fairly bespoke piece of hardware, but they still turn up on eBay for around
+**$20** — genuinely worth it if you're into this kind of thing. For the period
+flavor, here's the [2005 Ars Technica review](https://arstechnica.com/gadgets/2005/01/radioshark/)
+that this project set out to match (and then some).
+
+| Radio | Tools |
+|---|---|
+| ![Radio tab](docs/radio.png) | ![Tools tab](docs/tools.png) |
+
+<p align="center"><img src="docs/transcription.png" width="520" alt="Live transcription window"></p>
+
+---
+
+## Features
+
+* 📻 **Tune AM/FM** with a car-radio **Seek** that stops on the next station
+* 🔊 **Listen** live, with a toggleable **equalizer** (presets + custom sliders)
+* 📊 A live **spectrum visualizer**
+* ⏺️ **Record** to MP3/WAV/AAC — *while you keep listening*
+* ⏯️ **Timeshift** — pause and rewind live radio (TiVo-style circular buffer)
+* 🌐 **Stream** your radio to your phone/VLC over the network
+* 🗓️ **Schedule** recordings and **wake-to-radio alarms**
+* 🛰️ **24/7 logging** into timestamped segments
+* 🔎 **Scan** the whole band and rank the stations it finds
+* 🎵 **Song ID** what's playing (via Shazam)
+* 📝 **Live transcription** in a karaoke-style window (local Whisper) — great for
+  talk radio
+* 💡 Full **LED** control (blue / red / purple / pulse)
+
+Two front-ends share one engine, so they're always feature-identical:
+
+* a **CLI** (`shark.py`) — Windows terminal and Linux terminal
 * a **GUI** (`shark_gui.py`) — Tkinter, runs unchanged on Windows and Linux
-
-![Radio tab](radio.png)
-
-![Tools tab](tools.png)
-
-![Live transcription window](transcription.png)
-
----
-
-## How the hardware works
-
-The radioSHARK is **two USB devices in one**:
-
-1. A **USB HID** interface — receives tuning commands and drives the LEDs.
-2. A **USB Audio** capture interface — the demodulated AM/FM audio arrives at the
-   PC as a *recording* input (no separate driver needed).
-
-So everything is: **tune over HID → capture/handle the audio from the USB input.**
-The 3.5 mm jack on the unit is a **combination headphone-out / antenna** — you
-never feed audio *into* it; a wire or earbuds plugged in act as an FM antenna and
-noticeably improve weak stations.
-
-**LEDs:** the fins glow **blue** when powered and **red** when recording. There's
-no dedicated purple LED, but red+blue can be driven together for a purple glow
-(the "Purple" button) — which is why the idle blue looks "blue-purple" through the
-translucent housing.
-
-The HID tuning protocol (FM PLL, AM, LED registers) was reconstructed from the
-Linux kernel drivers `drivers/media/radio/radio-shark.c` and `tea575x.c` by
-Hans de Goede.
-
----
-
-## ⚠️ One-time Windows setup (important)
-
-Windows ships the shark's audio endpoint **disabled**, so at first it looks dead.
-Enable it once:
-
-1. Right-click the speaker icon → **Sound settings** → **More sound settings**
-   (or run `mmsys.cpl`) → **Recording** tab.
-2. Right-click in the list → enable **Show Disabled Devices** and
-   **Show Disconnected Devices**.
-3. Find **Analog Connector (RadioSHARK)**, right-click → **Enable**.
-
-If it shows a level but you capture silence, also make sure its level isn't muted
-(Recording → its Properties → Levels).
-
----
-
-## Requirements
-
-* **Python 3.10+**
-* **ffmpeg / ffplay** on `PATH` (e.g. `winget install Gyan.FFmpeg`)
-* Python packages: `pip install -r requirements.txt`
-  * `hidapi` — tuning + LEDs (required)
-  * `shazamio` + `audioop-lts` — song ID (`audioop-lts` is required on Python 3.13+,
-    which removed the stdlib `audioop` that shazamio needs)
-  * `faster-whisper` — live transcription (downloads a model on first use; run
-    `python shark.py prepare` once to cache it)
-* Optional (Windows): `AudioDeviceCmdlets` PowerShell module if you need to script
-  the capture level.
 
 ---
 
 ## Quick start
 
 ```bash
-python shark.py prepare        # one-time: cache the transcription model
-python shark_gui.py            # launch the GUI   (or: python shark.py gui)
+# 1. install deps (ffmpeg must also be on PATH: winget install Gyan.FFmpeg)
+pip install -r requirements.txt
 
-# ...or drive it from the command line:
-python shark.py 88.5           # tune FM
-python shark.py listen         # play through the speakers
-python shark.py scan           # find stations
+# 2. Windows only — enable the shark's audio device (see below)
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+
+# 3. cache the transcription model (one-time, optional)
+python shark.py prepare
+
+# 4. go
+python shark_gui.py        # the GUI   (or: python shark.py gui)
+python shark.py 88.5       # ...or drive it from the command line
 ```
 
----
+### ⚠️ Windows: enable the audio device (one-time)
 
-## The GUI
+Windows ships the shark's USB-audio capture endpoint **disabled**, so at first the
+device looks dead even though it's fine. **Run the setup script** and it's handled:
 
-**Radio tab** — everyday use:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+```
 
-* **Tuner**: `◀◀ Seek` / `Seek ▶▶` jump to the next real station (car-radio style);
-  `◀ ▶` step one channel; type a frequency + **Tune**; **AM** toggles band (and
-  jumps to the AM dial so you're not at 88 on the AM band).
-* **Listen / Record / Transcribe / Song ID** — Record captures the current station
-  to a timestamped MP3 *while you keep listening*; Transcribe opens the karaoke
-  window; Song ID names what's playing.
-* **Equalizer** — toggle on/off, pick a preset, or use the bass/mid/treble sliders
-  (select `custom`) and hit **Apply**.
-* **Visualizer** — live spectrum off the audio.
-* **Presets** — double-click to tune; save the current station.
+It finds the endpoint by its hardware ID, enables it, and restarts the audio
+service (it'll prompt for admin). Prefer to do it by hand? Open `mmsys.cpl` →
+**Recording** → right-click → show disabled/disconnected devices → enable
+**Analog Connector (RadioSHARK)**.
 
-**Tools tab**:
+### Requirements
 
-* **Station scan** — Scan FM / Scan AM with a progress bar; results list stations
-  with a signal-strength bar (tick **debug** to see raw dB/entropy); double-click
-  a result to tune it.
-* **LED** — Red / Blue / Purple / Pulse / Off + a brightness slider.
-* **Record / Stream / Log** — timed recording, **Timeshift** (pause/rewind live
-  radio), **Stream** (serves `http://<pc-ip>:<port>/` to phones/VLC on your LAN),
-  and **24/7 Log** (continuous timestamped segments).
-* **Schedule** — schedule recordings and wake-to-radio alarms (Windows Task
-  Scheduler / Linux cron).
+* **Python 3.10+** and **ffmpeg/ffplay** on `PATH`
+* `pip install -r requirements.txt` — `hidapi` (tuning/LEDs), `shazamio`
+  (+`audioop-lts` on Python 3.13+) for song ID, `faster-whisper` for transcription
 
 ---
 
@@ -133,11 +99,9 @@ python shark.py log [--freq F] [--segment SECS] [--format mp3|aac|wav] [--dir D]
 python shark.py songid [--seconds N]
 python shark.py transcribe [--live] [--seconds N] [--model base] [--file F]
 python shark.py prepare                cache the Whisper model
-python shark.py preset add <name> <freq> [--am] [--label "..."]
-python shark.py presets
-python shark.py schedule add <name> (--freq F | --preset P) --at HH:MM [--dur S] [--repeat daily|weekdays|weekends|weekly|hourly|once]
-python shark.py schedule list | remove <name>
-python shark.py alarm  add <name> ... | list | remove <name>
+python shark.py preset add <name> <freq> [--am] [--label "..."]   |   presets
+python shark.py schedule add <name> (--freq F | --preset P) --at HH:MM [--dur S] [--repeat ...]
+python shark.py schedule list | remove <name>      (also: alarm add|list|remove)
 python shark.py led [--red on|off] [--blue 0-127] [--pulse 0-127]
 python shark.py gui
 ```
@@ -146,60 +110,15 @@ EQ profiles: `flat`, `bass`, `treble`, `voice`, `music`, `warm`.
 
 ---
 
-## Architecture (and why it ports cleanly)
+## Under the hood
 
-One **fan-out audio engine** (`shark.engine_cmds`) runs a single ffmpeg capture
-that tees to everything at once — because the OS only lets one process open the
-capture device:
+Curious how a 2004 USB radio actually works, the HID tuning protocol, the
+single-capture fan-out engine, and how it ports to Linux? See
+**[docs/HARDWARE.md](docs/HARDWARE.md)**. Minimal protocol demos are in
+[`examples/`](examples/).
 
-```
-                       ┌─ WAV  → ffplay         (speakers)
-USB capture → ffmpeg ──┼─ 8 kHz raw → viz.raw   (visualizer reads the tail live)
-                       ├─ 16 kHz segments       (live transcription)
-                       └─ mp3/aac               (recording, optional)
-```
+> Not a true SDR — the TEA5757 chip only demodulates broadcast AM/FM to audio.
+> For wideband SDR (aircraft, weather sats, etc.), grab an RTL-SDR.
 
-All OS-specific behavior lives behind a thin **platform seam** in `shark.py`:
-
-* `IS_WIN`, `default_device()`, `audio_input()` — DirectShow on Windows, ALSA on
-  Linux.
-* scheduling branches between `schtasks` and `cron`.
-* tuning and LEDs use HID via `hidapi`, which is cross-platform.
-
-The CLI and GUI both build their processes from the same **command builders**
-(`listen_cmd`, `record_cmd`, `stream_cmd`, `log_cmd`, `timeshift_recorder_cmd`,
-`engine_cmds`), so the two front-ends stay feature-identical.
-
-### The 4 modes
-
-| Mode | Command | File |
-|------|---------|------|
-| Windows CLI | `python shark.py …` | `shark.py` |
-| Linux terminal | `python shark.py …` | `shark.py` (same file) |
-| Windows GUI | `python shark_gui.py` | `shark_gui.py` |
-| Linux GUI | `python shark_gui.py` | `shark_gui.py` (same file) |
-
----
-
-## Linux notes
-
-The mainline Linux kernel already includes the `radio-shark` driver (V4L2 tuning +
-a standard ALSA USB-audio capture). To run there: set `RADIOSHARK_ALSA` to the
-shark's ALSA capture device (e.g. `plughw:CARD=radioSHARK`), install `ffmpeg`,
-and use the same commands. Tuning may use `hidapi` directly or the kernel's
-`v4l2-ctl --set-freq` depending on whether the kernel module has claimed the HID
-interface.
-
-## Notes & limitations
-
-* Not a true SDR — the TEA5757 chip only demodulates broadcast AM/FM to audio
-  (no raw IQ). For wideband SDR, get an RTL-SDR.
-* The 76–90 MHz "Japan" band tunes but this US unit's RF front-end mutes it.
-* Transcription is *near*-live (a second or two behind) — that's the nature of
-  batch speech recognition on CPU, not a bug.
-* Changing the EQ restarts the audio engine, so playback blips for ~1 second.
-
-## Credits
-
-HID/tuning protocol from the Linux kernel `radio-shark.c` / `tea575x.c`
-(Hans de Goede). Built with ffmpeg, hidapi, shazamio, and faster-whisper.
+HID/tuning protocol derived from the Linux kernel `radio-shark.c` / `tea575x.c`
+by Hans de Goede. Built with ffmpeg, hidapi, shazamio, and faster-whisper.
