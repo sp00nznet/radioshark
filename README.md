@@ -14,6 +14,8 @@ It ships in two front-ends that share one engine:
 
 ![Radio tab](radio.png)
 
+![Tools tab](tools.png)
+
 ![Live transcription window](transcription.png)
 
 ---
