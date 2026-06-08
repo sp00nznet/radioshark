@@ -41,6 +41,8 @@ class SharkGUI:
         self.karaoke = None
         self.viz_running = False
         self._ref = 1.0
+        self._seeking = False
+        self.seek_cancel = threading.Event()
 
         self.am = tk.BooleanVar(value=False)
         self.fm_freq, self.am_freq = 96.3, 1000
@@ -118,11 +120,15 @@ class SharkGUI:
         outer = ttk.Frame(nb); nb.add(outer, text="Tools")
         canvas = tk.Canvas(outer, highlightthickness=0)
         sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        f = ttk.Frame(canvas, padding=10)
+        f = ttk.Frame(canvas, padding=(10, 10, 16, 10))
         f.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=f, anchor="nw")
+        win = canvas.create_window((0, 0), window=f, anchor="nw")
         canvas.configure(yscrollcommand=sb.set)
         canvas.pack(side="left", fill="both", expand=True); sb.pack(side="right", fill="y")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))  # fit width
+        wheel = lambda e: canvas.yview_scroll(int(-e.delta / 120), "units")
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", wheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
 
         # Scan
         sc = ttk.LabelFrame(f, text="Station scan", padding=8); sc.pack(fill="x")
@@ -191,22 +197,40 @@ class SharkGUI:
         self.do_tune()
 
     def do_tune(self):
+        if self._seeking:                 # a manual tune interrupts an in-progress seek
+            self.seek_cancel.set()
         try:
             shark.tune(self.freq.get(), am=self.am.get())
             if self.am.get(): self.am_freq = self.freq.get()
             else: self.fm_freq = self.freq.get()
+            # auto-play: tuning should produce sound (unless busy seeking or with an
+            # exclusive capture like timed-record/stream/log running)
+            if not self._seeking and not self.media and not self.ts_procs:
+                self.listen_on = True; self.ensure_engine(); self.sync_buttons()
             self.say(f"tuned {self.freq.get()} {'kHz AM' if self.am.get() else 'MHz FM'}")
         except Exception as e:
             self.say(f"tune error: {e}")
 
     def do_seek(self, up):
-        was = (self.listen_on, self.tx_on, self.recording)
-        self.stop_all(); self.say("seeking…")
+        if self._seeking:                 # clicking seek again cancels the current one
+            self.seek_cancel.set(); self.say("seek cancelled"); return
+        self.stop_all()
+        self.seek_cancel = threading.Event(); self._seeking = True
+        self.say("seeking…  (click Seek again to stop)")
         def run():
             found = shark.seek(self.freq.get(), up=up, am=self.am.get(),
-                               progress=lambda fr, r: self.root.after(0, lambda: self.freq.set(fr)))
-            self.root.after(0, lambda: (self.freq.set(found) if found else None,
-                                        self.say(f"found {found}" if found else "no station")))
+                               progress=lambda fr, r: self.root.after(0, lambda: self.freq.set(fr)),
+                               cancel=self.seek_cancel.is_set)
+            def done():
+                self._seeking = False
+                if found:
+                    self.freq.set(found)
+                    self.listen_on = True; self.ensure_engine()   # play the found station
+                    self.say(f"found {found}")
+                else:
+                    self.say("seek stopped")
+                self.sync_buttons()
+            self.root.after(0, done)
         threading.Thread(target=run, daemon=True).start()
 
     # ------------------------------------------------------------- engine
@@ -341,17 +365,27 @@ class SharkGUI:
         self.k_text = tk.Text(self.karaoke, wrap="word", font=("Segoe UI", 17),
                               bg="#101014", fg="#e8e8ea", padx=14, pady=14, spacing3=4)
         self.k_text.pack(fill="both", expand=True)
-        self.karaoke.protocol("WM_DELETE_WINDOW", self.toggle_transcribe)
+        self.karaoke.protocol("WM_DELETE_WINDOW", self.close_karaoke)
 
     def _k_add(self, text):
-        self.root.after(0, lambda: (self.k_text.insert("end", text), self.k_text.see("end")))
+        def add():
+            if self.karaoke and self.karaoke.winfo_exists():
+                self.k_text.insert("end", text); self.k_text.see("end")
+        self.root.after(0, add)
+
+    def close_karaoke(self):
+        self.tx_on = False; self.stop_transcribe_worker()
+        if self.karaoke:
+            try: self.karaoke.destroy()
+            except Exception: pass
+            self.karaoke = None
+        if not (self.listen_on or self.recording):
+            self.stop_engine()
+        self.sync_buttons(); self.say("transcription stopped")
 
     def toggle_transcribe(self):
         if self.tx_on:
-            self.tx_on = False; self.stop_transcribe_worker()
-            if not (self.listen_on or self.recording):
-                self.stop_engine()
-            self.sync_buttons(); self.say("transcription stopped"); return
+            self.close_karaoke(); return
         self.stop_media(); self.tx_on = True
         self.ensure_engine(); self.open_karaoke()
         self.tx_stop = threading.Event()

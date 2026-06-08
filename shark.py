@@ -331,23 +331,30 @@ def scan_band(am=False, progress=None, device=None):
                       key=lambda r: -r[2])
     return stations, floor
 
-def seek(from_freq, up=True, am=False, progress=None, device=None):
-    """Car-radio seek: step from from_freq until the next station, tune it, return it."""
+def seek(from_freq, up=True, am=False, progress=None, device=None, cancel=None):
+    """Car-radio seek: step from from_freq to the next station peak, tune it, return it.
+    cancel() (optional) is polled each step so a caller can abort. Stops one channel
+    past a peak and tunes back to it, so it reliably lands ON the station."""
     chans = channels(am)
     step = 1 if up else -1
-    start = min(range(len(chans)), key=lambda i: abs(chans[i] - from_freq))
-    floor, i = None, start
+    i = min(range(len(chans)), key=lambda k: abs(chans[k] - from_freq))
+    floor, prev_f, prev_rms = None, None, -999.0
     for _ in range(len(chans)):
+        if cancel and cancel():
+            return None
         i = (i + step) % len(chans)
         f = chans[i]
         tune(f, am=am, ack=False)
-        rms = measure_rms(0.5, device)
-        floor = rms if floor is None else min(floor, rms)
+        rms = measure_rms(0.4, device)
         if progress:
             progress(f, rms)
-        if rms >= floor + 5.0 and rms > -30:        # a real signal above the floor
-            tune(f, am=am)                          # final tune (with LED ack)
-            return f
+        floor = rms if floor is None else min(floor, rms)
+        # the previous channel was a peak if it sat well above the floor and we've
+        # now dropped off it -> that was a station.
+        if prev_f is not None and prev_rms >= floor + 5 and prev_rms > -33 and rms < prev_rms - 1:
+            tune(prev_f, am=am)
+            return prev_f
+        prev_f, prev_rms = f, rms
     return None
 
 def engine_cmds(eq=None, vizfile=None, segdir=None, device=None, record_file=None):
