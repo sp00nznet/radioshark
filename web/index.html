@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>radioSHARK</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>🦈 radioSHARK</h1>
+  <div id="status" class="status">connecting…</div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="radio">Radio</button>
+  <button class="tab" data-tab="tools">Tools</button>
+</nav>
+
+<!-- ============================= RADIO ============================= -->
+<section id="radio" class="panel active">
+
+  <div class="card tuner">
+    <div class="row">
+      <button id="seekDown" class="btn">◀◀ Seek</button>
+      <button id="stepDown" class="btn sm">◀</button>
+      <input id="freq" class="freq" type="number" step="0.1" inputmode="decimal">
+      <span id="unit" class="unit">MHz</span>
+      <button id="stepUp" class="btn sm">▶</button>
+      <button id="seekUp" class="btn">Seek ▶▶</button>
+      <button id="tune" class="btn accent">Tune</button>
+      <label class="chk"><input type="checkbox" id="am"> AM</label>
+    </div>
+  </div>
+
+  <div class="card row controls">
+    <button id="listen" class="btn big">▶ Listen</button>
+    <button id="record" class="btn">● Record</button>
+    <button id="transcribe" class="btn">Transcribe</button>
+    <button id="songid" class="btn">Song ID</button>
+    <span id="nowplaying" class="np">—</span>
+  </div>
+
+  <div class="card">
+    <canvas id="viz" height="90"></canvas>
+  </div>
+
+  <div class="card eq">
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="eqOn"> EQ</label>
+      <select id="eqProfile"></select>
+      <label class="sl">bass <input type="range" id="eqB" min="-10" max="10" value="0"></label>
+      <label class="sl">mid <input type="range" id="eqM" min="-10" max="10" value="0"></label>
+      <label class="sl">treble <input type="range" id="eqT" min="-10" max="10" value="0"></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Presets</h3>
+    <ul id="presets" class="list"></ul>
+    <div class="row">
+      <input id="presetName" class="txt" placeholder="name">
+      <button id="savePreset" class="btn">Save current</button>
+    </div>
+  </div>
+
+  <div class="card transcript-card">
+    <h3>Transcript</h3>
+    <div id="transcript" class="transcript"></div>
+  </div>
+</section>
+
+<!-- ============================= TOOLS ============================= -->
+<section id="tools" class="panel">
+
+  <div class="card">
+    <h3>Station scan</h3>
+    <div class="row">
+      <button id="scanFM" class="btn">Scan FM</button>
+      <button id="scanAM" class="btn">Scan AM</button>
+      <span id="scanStatus" class="muted"></span>
+    </div>
+    <div class="progress"><div id="scanBar"></div></div>
+    <ul id="scanList" class="list mono"></ul>
+  </div>
+
+  <div class="card">
+    <h3>LED</h3>
+    <div class="row">
+      <button class="btn led" data-led="red">Red</button>
+      <button class="btn led" data-led="blue">Blue</button>
+      <button class="btn led" data-led="purple">Purple</button>
+      <button class="btn led" data-led="pulse">Pulse</button>
+      <button class="btn led" data-led="off">Off</button>
+      <input type="range" id="ledBright" min="0" max="127" value="64">
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Record / Stream / Log</h3>
+    <div class="row">
+      <label>secs <input id="recSecs" class="num" type="number" value="60"></label>
+      <select id="recFmt"><option>mp3</option><option>wav</option><option>aac</option></select>
+      <button id="recTimed" class="btn">Record (timed)</button>
+    </div>
+    <div class="row">
+      <label>timeshift min <input id="tsMin" class="num" type="number" value="60"></label>
+      <button id="timeshift" class="btn">Timeshift</button>
+    </div>
+    <div class="row">
+      <label>stream port <input id="streamPort" class="num" type="number" value="8000"></label>
+      <button id="stream" class="btn">Stream</button>
+      <span id="streamInfo" class="muted"></span>
+    </div>
+    <div class="row">
+      <label>log seg secs <input id="logSeg" class="num" type="number" value="3600"></label>
+      <button id="log" class="btn">24/7 Log</button>
+    </div>
+  </div>
+
+  <div class="card" id="tsPlayerCard" hidden>
+    <h3>Timeshift player</h3>
+    <audio id="tsPlayer" controls></audio>
+    <p class="muted">Scrub back within the rolling buffer. Newest audio is at the right edge.</p>
+  </div>
+
+  <div class="card">
+    <h3>Transcript appearance</h3>
+    <div class="row">
+      <label>font
+        <select id="txFont">
+          <option>system-ui</option><option>Georgia</option><option>Consolas</option>
+          <option>Arial</option><option>Verdana</option><option>Courier New</option>
+        </select>
+      </label>
+      <label>size <input id="txSize" class="num" type="number" value="17" min="10" max="48"></label>
+      <label>text <input type="color" id="txFg" value="#e8e8ea"></label>
+      <label>bg <input type="color" id="txBg" value="#101014"></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Schedule recording</h3>
+    <div class="row">
+      <input id="schName" class="txt" placeholder="name">
+      <label>at <input id="schAt" class="num" value="07:00"></label>
+      <label>dur <input id="schDur" class="num" type="number" value="3600"></label>
+      <select id="schRepeat">
+        <option>daily</option><option>weekdays</option><option>weekends</option>
+        <option>weekly</option><option>once</option>
+      </select>
+      <button id="schAdd" class="btn">Add</button>
+    </div>
+    <pre id="schList" class="sched"></pre>
+  </div>
+
+  <div class="card">
+    <h3>Recordings</h3>
+    <button id="refreshRec" class="btn sm">Refresh</button>
+    <ul id="recList" class="list"></ul>
+  </div>
+</section>
+
+<audio id="player" hidden></audio>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
