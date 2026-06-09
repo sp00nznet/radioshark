@@ -449,12 +449,20 @@ def doctor():
             L("fail", f"{tool} not found",
               "install ffmpeg (Windows: winget install Gyan.FFmpeg; Linux: apt install ffmpeg)")
 
-    # python packages
+    # python packages -- probe each in a subprocess so a broken or segfaulting
+    # native extension (e.g. an ABI-mismatched shazamio-core) is reported here
+    # instead of taking doctor itself down with it.
     def imp(mod, label, required, hint):
-        try:
-            __import__(mod); L("ok", label)
-        except Exception:
+        r = subprocess.run([sys.executable, "-c", f"import {mod}"],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            L("ok", label)
+        elif "No module named" in r.stderr:
             L("fail" if required else "warn", f"{label} not installed", hint)
+        else:                       # installed but won't import: crash/ABI/etc.
+            why = f"crashed (signal {-r.returncode})" if r.returncode < 0 else "import failed"
+            L("fail" if required else "warn", f"{label} present but {why}",
+              "incompatible build for this Python -- reinstall, or use a supported Python")
     imp("hid", "hidapi (tuning + LEDs)", True, "pip install hidapi")
     imp("numpy", "numpy (visualizer)", False, "pip install numpy")
     imp("shazamio", "shazamio (song ID)", False,
