@@ -34,12 +34,24 @@ pip install -r "$HERE/../requirements.txt" 2>/dev/null \
   || echo "! pip install failed - install the packages in requirements.txt manually"
 
 # 3. free the HID interface + grant access (needs sudo) ----------------------
+# Two things are required to get a hidraw node for userspace (hidapi):
+#   a) blacklist the in-kernel radio-shark driver so it doesn't claim the iface;
+#   b) tell usbhid NOT to ignore the device -- the HID core ships 077d:627a on
+#      its built-in ignore list (so radio-shark could own it), so blacklisting
+#      alone just leaves the HID interface orphaned with no hidraw node. The
+#      HID_QUIRK_NO_IGNORE (0x40000000) quirk overrides that and makes usbhid
+#      bind it and expose /dev/hidraw*. Audio is unaffected (snd-usb-audio
+#      handles the separate audio interface).
 echo "configuring HID access (needs sudo)..."
 sudo tee /etc/modprobe.d/blacklist-radioshark.conf >/dev/null <<'EOF'
-# Let usbhid expose the radioSHARK HID interface so userspace (hidapi) can tune
-# it. Audio is unaffected (snd-usb-audio handles the separate audio interface).
 blacklist radio-shark
 blacklist radio-shark2
+EOF
+
+sudo tee /etc/modprobe.d/radioshark-quirk.conf >/dev/null <<'EOF'
+# Force usbhid to expose the radioSHARK (077d:627a) as a hidraw node instead of
+# ignoring it for the in-kernel radio-shark driver. HID_QUIRK_NO_IGNORE.
+options usbhid quirks=0x077D:0x627A:0x40000000
 EOF
 
 sudo tee /etc/udev/rules.d/70-radioshark.rules >/dev/null <<'EOF'
@@ -50,6 +62,18 @@ EOF
 
 sudo modprobe -r radio-shark 2>/dev/null || true
 sudo modprobe -r radio-shark2 2>/dev/null || true
+
+# Apply the usbhid quirk now. usbhid reads `quirks` only at load time, so a
+# device replug alone won't pick it up if usbhid is already loaded -- it has to
+# be reloaded. This briefly drops USB keyboards/mice; they re-enumerate. If
+# usbhid is busy (modprobe -r fails), a reboot applies the quirk file instead.
+QUIRK_APPLIED=0
+if sudo modprobe -r usbhid 2>/dev/null && sudo modprobe usbhid 2>/dev/null; then
+  QUIRK_APPLIED=1
+else
+  echo "! couldn't reload usbhid now (in use) -- reboot to apply the HID quirk."
+fi
+
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
@@ -64,5 +88,10 @@ else
 fi
 
 echo ""
-echo "Done. UNPLUG and REPLUG the radioSHARK so the changes take effect, then:"
+if [ "$QUIRK_APPLIED" = "1" ]; then
+  echo "Done. UNPLUG and REPLUG the radioSHARK so the changes take effect, then:"
+else
+  echo "Done -- but REBOOT to apply the HID quirk (usbhid couldn't be reloaded),"
+  echo "then verify with 'python shark.py doctor'. After that:"
+fi
 echo "    python shark_gui.py        # or: python shark.py 88.5"

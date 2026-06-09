@@ -21,7 +21,11 @@ Usage examples:
   python shark.py led --red on               # LED control
 """
 import sys, os, json, time, subprocess, argparse, re
-import hid
+try:
+    import hid
+except ImportError:        # keep hid optional at import time so `doctor` (and
+    hid = None             # --help) still run and can report the missing dep
+                           # instead of crashing on a fresh machine.
 
 try:                       # Windows consoles default to cp1252; emit UTF-8 so
     sys.stdout.reconfigure(encoding="utf-8")   # song titles/emoji don't crash
@@ -84,6 +88,8 @@ EQ_PROFILES = {
 
 # ---------------------------------------------------------------- HID layer
 def _open():
+    if hid is None:
+        raise RuntimeError("hidapi not installed - run: pip install hidapi")
     d = hid.device()
     try:
         d.open(VID, PID)
