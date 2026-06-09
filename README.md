@@ -38,10 +38,12 @@ that this project set out to match (and then some).
   talk radio
 * 💡 Full **LED** control (blue / red / purple / pulse)
 
-Two front-ends share one engine, so they're always feature-identical:
+Three front-ends share one engine, so they're always feature-identical:
 
 * a **CLI** (`shark.py`) — Windows terminal and Linux terminal
 * a **GUI** (`shark_gui.py`) — Tkinter, runs unchanged on Windows and Linux
+* a **web UI** (`shark_web.py`) — browser-based, built for **headless** boxes (e.g. an
+  LXC with the USB device passed through) where there's no display or local speakers
 
 ---
 
@@ -116,9 +118,35 @@ python shark.py schedule add <name> (--freq F | --preset P) --at HH:MM [--dur S]
 python shark.py schedule list | remove <name>      (also: alarm add|list|remove)
 python shark.py led [--red on|off] [--blue 0-127] [--pulse 0-127]
 python shark.py gui
+python shark.py web [--host 0.0.0.0] [--port 8080]
 ```
 
 EQ profiles: `flat`, `bass`, `treble`, `voice`, `music`, `warm`.
+
+---
+
+## Headless / web UI
+
+For a box with no display (an LXC, a Pi, a NAS) with the radioSHARK passed through over
+USB, run the web UI and drive it from any browser on your LAN:
+
+```bash
+python shark.py web              # serves on http://<host>:8080/
+```
+
+It's feature-complete with the GUI (tune/seek, listen, record, live transcription,
+EQ, LED, station scan, presets, timeshift, stream, 24/7 log, scheduled recording). The
+only real difference is **audio delivery**: with no local speakers, one ffmpeg capture
+is fanned out as an MP3 stream to the browser's `<audio>` element, and the visualizer is
+computed in the browser via the Web Audio API. Pure stdlib — no extra Python deps.
+
+* **Listen** in a browser tab streams live audio (~2-4 s buffer).
+* **Timeshift** plays the rolling HLS buffer in-browser so you can scrub back.
+* **Stream** still exposes the standalone `http://<host>:<port>/` endpoint for VLC/Icecast.
+* Recordings are listed with download links. Scratch files live in `$XDG_RUNTIME_DIR`
+  (not the repo), so a read-only checkout can't break playback.
+* No auth — intended for a trusted LAN. Put it behind a reverse proxy / SSH tunnel if you
+  need it locked down.
 
 ---
 

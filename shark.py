@@ -20,7 +20,7 @@ Usage examples:
   python shark.py schedule add atc --preset wnpr --at 17:00 --dur 3600 --repeat daily
   python shark.py led --red on               # LED control
 """
-import sys, os, json, time, subprocess, argparse, re
+import sys, os, json, time, subprocess, argparse, re, tempfile
 try:
     import hid
 except ImportError:        # keep hid optional at import time so `doctor` (and
@@ -43,6 +43,18 @@ FM_LO, FM_HI, FM_STEP = 87.9, 107.9, 0.2          # US FM channel plan (MHz)
 AM_LO, AM_HI, AM_STEP = 530, 1710, 10             # US AM/MW channel plan (kHz)
 HERE = os.path.dirname(os.path.abspath(__file__))
 PRESETS_FILE = os.path.join(HERE, "presets.json")
+
+def runtime_dir():
+    """A writable per-user scratch dir for engine temp files (segments, HLS buffer).
+    Kept OUT of the repo so a read-only/foreign-owned checkout (e.g. a passed-through
+    LXC volume) can't break playback the way writing _seg into HERE would."""
+    base = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
+    try:
+        d = os.path.join(base, f"radioshark-{os.getuid()}")
+    except AttributeError:                 # Windows has no getuid()
+        d = os.path.join(base, "radioshark")
+    os.makedirs(d, exist_ok=True)
+    return d
 
 # ---- platform layer (the only OS-specific seam; Linux port flips these) ----
 IS_WIN = sys.platform.startswith("win")
@@ -415,6 +427,25 @@ def engine_cmds(eq=None, vizfile=None, segdir=None, device=None, record_file=Non
               "-analyzeduration", "0", "-i", "pipe:0"]
     return cmd, ffplay
 
+def engine_cmds_web(eq=None, segdir=None, device=None, record_file=None, bitrate="192k"):
+    """Headless analog of engine_cmds(): ONE capture fanned out to an MP3 byte stream on
+    stdout (the web server pipes this to browser <audio> clients) plus optional
+    transcription segments and an optional recording. No ffplay (no local speakers) and
+    no viz file (the browser computes the spectrum from the audio via Web Audio)."""
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error"] + audio_input(device)
+    cmd += (["-map", "0:a"] + _eq_args(eq) +
+            ["-c:a", "libmp3lame", "-b:a", bitrate, "-flush_packets", "1", "-f", "mp3", "pipe:1"])
+    if segdir:                            # 4s mono 16k segments for live transcription
+        cmd += ["-map", "0:a", "-ar", "16000", "-ac", "1", "-f", "segment",
+                "-segment_time", "4", "-reset_timestamps", "1",
+                os.path.join(segdir, "seg_%05d.wav")]
+    if record_file:                       # record the clean (pre-EQ) signal to a file
+        ext = os.path.splitext(record_file)[1].lstrip(".").lower()
+        rc = {"wav": ["-c:a", "pcm_s16le"], "aac": ["-c:a", "aac", "-b:a", "192k"]
+              }.get(ext, ["-c:a", "libmp3lame", "-b:a", "192k"])
+        cmd += ["-map", "0:a"] + rc + ["-y", record_file]
+    return cmd
+
 def prepare(model="base"):
     """One-time: download/cache the Whisper model so live transcription starts fast."""
     print(f"preparing transcription model '{model}' (one-time download)...")
@@ -593,6 +624,7 @@ def main():
     pa = sub.add_parser("preset"); pa.add_argument("action", choices=["add", "remove"]); pa.add_argument("name"); pa.add_argument("freq", nargs="?", type=float); pa.add_argument("--am", action="store_true"); pa.add_argument("--label", default="")
     le = sub.add_parser("led"); le.add_argument("--red", choices=["on", "off"]); le.add_argument("--blue", type=int); le.add_argument("--pulse", type=int)
     sub.add_parser("gui")
+    wb = sub.add_parser("web"); wb.add_argument("--host", default="0.0.0.0"); wb.add_argument("--port", type=int, default=8080)
     ts = sub.add_parser("timeshift"); ts.add_argument("--freq", type=float); ts.add_argument("--am", action="store_true"); ts.add_argument("--buffer-min", type=int, default=60, dest="buffer_min")
     st = sub.add_parser("stream"); st.add_argument("--freq", type=float); st.add_argument("--am", action="store_true"); st.add_argument("--port", type=int, default=8000); st.add_argument("--format", dest="fmt", default="mp3", choices=["mp3","aac"]); st.add_argument("--bitrate", default="192k"); st.add_argument("--icecast")
     lg = sub.add_parser("log"); lg.add_argument("--freq", type=float); lg.add_argument("--am", action="store_true"); lg.add_argument("--segment", type=int, default=3600); lg.add_argument("--format", dest="fmt", default="mp3", choices=["mp3","aac","wav"]); lg.add_argument("--dir")
@@ -619,6 +651,8 @@ def main():
     a = p.parse_args()
     if a.cmd == "gui":
         import shark_gui; shark_gui.main()
+    elif a.cmd == "web":
+        import shark_web; shark_web.main(host=a.host, port=a.port)
     elif a.cmd == "tune":
         tune(a.freq, am=a.am, lowband=a.japan)
     elif a.cmd == "listen":
